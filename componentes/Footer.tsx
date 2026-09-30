@@ -80,13 +80,10 @@ export default function Footer() {
 
         </div>
 
-        {/* DIVISÓRIA */}
         <div className="my-10 border-t border-white/15" />
 
-        {/* COPYRIGHT */}
         <div className="flex flex-col gap-2 font-[family-name:var(--font-roboto)] text-sm text-white/60 md:flex-row md:items-center md:justify-between">
           <p>© 2026 Saúde Vale+</p>
-
           <p>Projeto acadêmico de tecnologia</p>
         </div>
 

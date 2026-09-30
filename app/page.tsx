@@ -2,7 +2,7 @@ import Header from "@/componentes/Header";
 import Navigation from "@/componentes/Navigation";
 import Footer from "@/componentes/Footer";
 
-import type { Servico } from "@/types";
+import type { Servico } from "@/types/";
 
 const servicos: Servico[] = [
   {
@@ -10,24 +10,28 @@ const servicos: Servico[] = [
     descricao:
       "Tenha mais facilidade para consultar informações e realizar processos relacionados aos atendimentos.",
     icone: "🩺",
+    link: "#consultas",
   },
   {
     titulo: "Medicamentos",
     descricao:
       "Acesse informações sobre medicamentos e o processo de retirada disponibilizado pelo SUS.",
     icone: "💊",
+    link: "#medicamentos",
   },
   {
     titulo: "Carteira de vacinação",
     descricao:
       "Visualize suas informações de vacinação de forma simples, clara e organizada.",
     icone: "💉",
+    link: "#vacinacao",
   },
   {
     titulo: "Sobre o SUS",
     descricao:
       "Encontre informações para compreender melhor o SUS e seus serviços.",
     icone: "🏥",
+    link: "#sus",
   },
 ];
 
@@ -38,14 +42,11 @@ export default function Home() {
       {/* HEADER */}
       <Header />
 
-      {/* MENU DE NAVEGAÇÃO */}
+      {/* MENU */}
       <Navigation />
 
       {/* HERO */}
-      <section
-        id="inicio"
-        className="bg-white"
-      >
+      <section id="inicio" className="bg-white">
         <div className="mx-auto grid max-w-7xl items-center gap-14 px-6 py-20 lg:grid-cols-2 lg:px-8 lg:py-28">
 
           {/* TEXTO */}
@@ -101,7 +102,6 @@ export default function Home() {
               </span>
 
             </div>
-
           </div>
 
           {/* MOCKUP */}
@@ -170,7 +170,7 @@ export default function Home() {
                       Tudo organizado
                     </p>
 
-                    <p className="font-[family-name:var(--font-roboto)] text-xs text-[#111827]/55">
+                    <p className="mt-1 font-[family-name:var(--font-roboto)] text-xs text-[#111827]/55">
                       Seus serviços em um só lugar.
                     </p>
                   </div>
@@ -178,7 +178,6 @@ export default function Home() {
                 </div>
 
               </div>
-
             </div>
           </div>
 
@@ -214,6 +213,7 @@ export default function Home() {
             {servicos.map((servico) => (
               <a
                 key={servico.titulo}
+                href={servico.link}
                 className="group rounded-3xl border border-[#D1D5DB] bg-white p-6 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#007DB8]/40 hover:shadow-lg"
               >
 
@@ -237,7 +237,6 @@ export default function Home() {
             ))}
 
           </div>
-
         </div>
       </section>
 

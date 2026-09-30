@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Header() {
   return (
-    <header className="bg-white">
+    <header className="border-b border-[#D1D5DB] bg-white">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
 
         {/* LOGO */}
@@ -27,18 +27,25 @@ export default function Header() {
         </Link>
 
         {/* ÁREA DO USUÁRIO */}
-        <Link
-          href="/login"
-          className="rounded-xl bg-[#005F8F] px-5 py-3 font-[family-name:var(--font-inter)] text-sm font-bold text-white transition duration-200 hover:bg-[#007DB8]"
-        >
-          Entrar
-        </Link>
-        <Link
-          href="/cadastro"
-          className="rounded-xl bg-[#005F8F] px-5 py-3 font-[family-name:var(--font-inter)] text-sm font-bold text-white transition duration-200 hover:bg-[#007DB8]"
-        >
-          Criar conta
-        </Link>
+        <div className="flex items-center gap-3">
+
+          {/* ENTRAR */}
+          <Link
+            href="/login"
+            className="hidden rounded-xl px-4 py-2.5 font-[family-name:var(--font-inter)] text-sm font-bold text-[#005F8F] transition hover:bg-[#F5F7FA] hover:text-[#007DB8] sm:block"
+          >
+            Entrar
+          </Link>
+
+          {/* CADASTRO */}
+          <Link
+            href="/cadastro"
+            className="rounded-xl bg-[#007DB8] px-5 py-2.5 font-[family-name:var(--font-inter)] text-sm font-bold text-white transition duration-200 hover:bg-[#005F8F]"
+          >
+            Criar conta
+          </Link>
+
+        </div>
 
       </div>
     </header>

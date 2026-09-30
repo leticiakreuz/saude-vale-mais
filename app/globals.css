@@ -4,11 +4,17 @@ html {
   scroll-behavior: smooth;
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: #f5f7fa;
+  background-color: #F5F7FA;
+  color: #111827;
 }
