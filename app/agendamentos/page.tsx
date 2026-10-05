@@ -1,141 +1,85 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  onAuthStateChanged,
-  type User,
-} from "firebase/auth";
+import { useRouter } from "next/navigation";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   serverTimestamp,
+  setDoc,
 } from "firebase/firestore";
-import { useRouter } from "next/navigation";
 
 import Header from "../../componentes/Header";
 import Navigation from "../../componentes/Navigation";
 import Footer from "../../componentes/Footer";
 import { auth, db } from "../firebase";
 
-type Escala = "escala1" | "escala2";
 type Periodo = "Manhã" | "Tarde";
+type Etapa = "carregando" | "perfil" | "agendar" | "consultas";
 
-type Medico = {
-  id: number;
-  nome: string;
-  profissao: string;
-  escala: Escala;
-  servicos: string[];
+type Perfil = {
+  nome?: string;
+  email?: string;
+  cpf?: string;
+  telefone?: string;
+  dataNascimento?: string;
+  cartaoSus?: string;
+  cep?: string;
+  rua?: string;
+  numero?: string;
+  bairro?: string;
+  cidade?: string;
+  unidadeReferencia?: string;
 };
 
 type Agendamento = {
   id: string;
-  userId: string;
+  userId?: string;
   servico: string;
   periodo: Periodo;
   medico: string;
+  profissao?: string;
   dia: string;
   horario: string;
   status: string;
 };
 
-const medicos: Medico[] = [
-  {
-    id: 1,
-    nome: "Dra. Ana Oliveira",
-    profissao: "Clínico geral",
-    escala: "escala1",
-    servicos: ["Consulta médica", "Consulta de retorno"],
-  },
-  {
-    id: 2,
-    nome: "Dr. Carlos Mendes",
-    profissao: "Clínico geral",
-    escala: "escala2",
-    servicos: ["Consulta médica", "Consulta de retorno"],
-  },
-  {
-    id: 3,
-    nome: "Dra. Mariana Costa",
-    profissao: "Pediatria",
-    escala: "escala1",
-    servicos: ["Consulta médica", "Consulta de retorno"],
-  },
-  {
-    id: 4,
-    nome: "Enf. Beatriz Lima",
-    profissao: "Enfermagem",
-    escala: "escala1",
-    servicos: ["Enfermagem"],
-  },
-  {
-    id: 5,
-    nome: "Enf. Lucas Martins",
-    profissao: "Enfermagem",
-    escala: "escala2",
-    servicos: ["Enfermagem"],
-  },
-  {
-    id: 6,
-    nome: "Dr. Rafael Souza",
-    profissao: "Odontologia",
-    escala: "escala1",
-    servicos: ["Odontologia"],
-  },
-  {
-    id: 7,
-    nome: "Dra. Juliana Martins",
-    profissao: "Odontologia",
-    escala: "escala2",
-    servicos: ["Odontologia"],
-  },
-  {
-    id: 8,
-    nome: "Dra. Fernanda Alves",
-    profissao: "Clínico geral",
-    escala: "escala2",
-    servicos: [
-      "Renovação de receita",
-      "Consulta de retorno",
-    ],
-  },
-];
-
-const horariosEscala1: Record<Periodo, string[]> = {
-  Manhã: ["07:30", "08:30", "10:30", "11:30"],
-  Tarde: ["13:30", "14:30", "16:00"],
-};
-
-const horariosEscala2: Record<Periodo, string[]> = {
-  Manhã: ["08:00", "09:00", "10:00", "11:00"],
-  Tarde: ["14:00", "15:00", "16:00"],
-};
-
 const servicosPorPeriodo: Record<Periodo, string[]> = {
   Manhã: [
     "Consulta médica",
-    "Enfermagem",
+    "Pediatria",
     "Odontologia",
-    "Renovação de receita",
     "Consulta de retorno",
-  ],
-  Tarde: [
-    "Odontologia",
     "Renovação de receita",
-    "Consulta de retorno",
   ],
+  Tarde: ["Odontologia", "Renovação de receita"],
 };
 
-function gerarDias() {
-  const hoje = new Date();
-  const dias: string[] = [];
+const horariosPorPeriodo: Record<Periodo, string[]> = {
+  Manhã: [
+    "07:30",
+    "08:00",
+    "08:30",
+    "09:00",
+    "10:00",
+    "10:30",
+    "11:00",
+    "11:30",
+  ],
+  Tarde: ["13:30", "14:00", "14:30", "15:00", "16:00"],
+};
 
-  // Considera os próximos 14 dias corridos.
-  // Sábados e domingos não são exibidos.
+function gerarDias(): string[] {
+  const dias: string[] = [];
+  const hoje = new Date();
+
   for (let i = 0; i < 14; i++) {
     const data = new Date(
       hoje.getFullYear(),
@@ -143,12 +87,7 @@ function gerarDias() {
       hoje.getDate() + i
     );
 
-    const diaDaSemana = data.getDay();
-
-    // 0 = domingo; 6 = sábado.
-    if (diaDaSemana === 0 || diaDaSemana === 6) {
-      continue;
-    }
+    if (data.getDay() === 0 || data.getDay() === 6) continue;
 
     const ano = data.getFullYear();
     const mes = String(data.getMonth() + 1).padStart(2, "0");
@@ -160,28 +99,16 @@ function gerarDias() {
   return dias;
 }
 
-function formatarDia(dataString: string) {
+function formatarData(dataString: string): string {
+  if (!dataString) return "";
+
   const [ano, mes, dia] = dataString.split("-").map(Number);
-  const data = new Date(ano, mes - 1, dia);
 
-  return {
-    semana: data
-      .toLocaleDateString("pt-BR", {
-        weekday: "short",
-      })
-      .replace(".", ""),
-    dia: String(data.getDate()).padStart(2, "0"),
-  };
-}
-
-function formatarDataCompleta(dataString: string) {
-  const [ano, mes, dia] = dataString.split("-").map(Number);
-  const data = new Date(ano, mes - 1, dia);
-
-  return data.toLocaleDateString("pt-BR", {
+  return new Date(ano, mes - 1, dia).toLocaleDateString("pt-BR", {
     weekday: "long",
     day: "2-digit",
     month: "long",
+    year: "numeric",
   });
 }
 
@@ -189,51 +116,67 @@ export default function AgendamentosPage() {
   const router = useRouter();
 
   const [usuario, setUsuario] = useState<User | null>(null);
+  const [perfil, setPerfil] = useState<Perfil>({});
+  const [etapa, setEtapa] = useState<Etapa>("carregando");
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
-  const [periodo, setPeriodo] = useState<Periodo>("Manhã");
-  const [servico, setServico] = useState("Consulta médica");
-
-  const [medicoSelecionado, setMedicoSelecionado] =
-    useState<Medico | null>(null);
-
-  const [diaSelecionado, setDiaSelecionado] = useState(
-    () => gerarDias()[0] ?? ""
-  );
-
-  const [horarioSelecionado, setHorarioSelecionado] = useState("");
-
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
-
   const [mensagem, setMensagem] = useState("");
   const [erro, setErro] = useState("");
 
-  const dias = useMemo(() => gerarDias(), []);
+  const [servico, setServico] = useState("Consulta médica");
+  const [periodo, setPeriodo] = useState<Periodo>("Manhã");
+  const [medico, setMedico] = useState("");
+  const [profissao, setProfissao] = useState("");
+  const [diaSelecionado, setDiaSelecionado] = useState("");
+  const [horarioSelecionado, setHorarioSelecionado] = useState("");
 
-  // AUTENTICAÇÃO E ATUALIZAÇÃO DOS AGENDAMENTOS EM TEMPO REAL
+  const dias = useMemo(() => gerarDias(), []);
+  const servicosDisponiveis = servicosPorPeriodo[periodo];
+  const horariosDisponiveis = horariosPorPeriodo[periodo];
+
   useEffect(() => {
+    let ativo = true;
     let cancelarAgendamentos: (() => void) | undefined;
 
-    const cancelarObservador = onAuthStateChanged(
-      auth,
-      (user) => {
-        cancelarAgendamentos?.();
-        cancelarAgendamentos = undefined;
+    const cancelarAuth = onAuthStateChanged(auth, async (user) => {
+      cancelarAgendamentos?.();
+      cancelarAgendamentos = undefined;
 
-        if (!user) {
-          setUsuario(null);
-          setAgendamentos([]);
-          setCarregando(false);
-          router.replace("/login");
-          return;
-        }
+      if (!user) {
+        if (!ativo) return;
+
+        setUsuario(null);
+        setAgendamentos([]);
+        setCarregando(false);
+        router.replace("/entrar");
+        return;
+      }
+
+      if (!ativo) return;
+
+      setCarregando(true);
+      setErro("");
+
+      try {
+        const referenciaPerfil = doc(db, "usuarios", user.uid);
+        const resultadoPerfil = await getDoc(referenciaPerfil);
+
+        if (!ativo) return;
+
+        const dadosPerfil: Perfil = resultadoPerfil.exists()
+          ? (resultadoPerfil.data() as Perfil)
+          : {};
 
         setUsuario(user);
-        setCarregando(true);
-        setErro("");
+        setPerfil({
+          ...dadosPerfil,
+          email: user.email ?? dadosPerfil.email ?? "",
+          nome: dadosPerfil.nome ?? user.displayName ?? "",
+        });
 
-        const referencia = collection(
+        const referenciaAgendamentos = collection(
           db,
           "usuarios",
           user.uid,
@@ -241,303 +184,393 @@ export default function AgendamentosPage() {
         );
 
         cancelarAgendamentos = onSnapshot(
-          referencia,
+          referenciaAgendamentos,
           (resultado) => {
-            const dados = resultado.docs.map((item) => ({
+            if (!ativo) return;
+
+            const dados: Agendamento[] = resultado.docs.map((item) => ({
               id: item.id,
               ...(item.data() as Omit<Agendamento, "id">),
             }));
 
             setAgendamentos(dados);
-            setErro("");
             setCarregando(false);
           },
-          (error) => {
-            console.error(
-              "Erro ao carregar agendamentos do Firebase:",
-              error
-            );
+          (erroFirebase) => {
+            console.error("Erro ao carregar agendamentos:", erroFirebase);
+
+            if (!ativo) return;
 
             setErro(
-              "Não foi possível carregar seus agendamentos. Verifique as permissões do Firebase."
+              "Não foi possível carregar seus agendamentos. Verifique as permissões do Firestore."
             );
-
             setCarregando(false);
           }
         );
+
+        setEtapa("perfil");
+      } catch (erroFirebase) {
+        console.error("Erro ao carregar perfil:", erroFirebase);
+
+        if (!ativo) return;
+
+        setErro("Não foi possível carregar seus dados.");
+        setCarregando(false);
       }
-    );
+    });
 
     return () => {
-      cancelarObservador();
+      ativo = false;
+      cancelarAuth();
       cancelarAgendamentos?.();
     };
   }, [router]);
 
-  const servicosDisponiveis = servicosPorPeriodo[periodo];
-
-  const medicosDisponiveis = useMemo(() => {
-    return medicos.filter((medico) =>
-      medico.servicos.includes(servico)
-    );
-  }, [servico]);
-
-  useEffect(() => {
-    if (
-      medicoSelecionado &&
-      !medicosDisponiveis.some(
-        (medico) => medico.id === medicoSelecionado.id
-      )
-    ) {
-      setMedicoSelecionado(null);
-      setHorarioSelecionado("");
-    }
-  }, [medicosDisponiveis, medicoSelecionado]);
-
-  const horariosDoMedico = useMemo(() => {
-    if (!medicoSelecionado) {
-      return [];
-    }
-
-    return medicoSelecionado.escala === "escala1"
-      ? horariosEscala1[periodo]
-      : horariosEscala2[periodo];
-  }, [medicoSelecionado, periodo]);
-
-  const agendamentosDoDia = agendamentos.filter(
-    (agendamento) =>
-      agendamento.dia === diaSelecionado &&
-      agendamento.periodo === periodo
-  );
-
-  const horarioOcupado = (horario: string) => {
-    return agendamentosDoDia.some(
-      (agendamento) =>
-        agendamento.horario === horario &&
-        agendamento.medico === medicoSelecionado?.nome &&
-        agendamento.status !== "cancelado"
-    );
+  const atualizarPerfil = (campo: keyof Perfil, valor: string) => {
+    setPerfil((anterior) => ({ ...anterior, [campo]: valor }));
   };
 
-  const diaTemHorarioLivre = (dia: string) => {
-    if (!medicoSelecionado) {
-      return true;
-    }
-
-    const horarios =
-      medicoSelecionado.escala === "escala1"
-        ? horariosEscala1[periodo]
-        : horariosEscala2[periodo];
-
-    return horarios.some(
-      (horario) =>
-        !agendamentos.some(
-          (agendamento) =>
-            agendamento.dia === dia &&
-            agendamento.periodo === periodo &&
-            agendamento.medico === medicoSelecionado.nome &&
-            agendamento.horario === horario &&
-            agendamento.status !== "cancelado"
-        )
-    );
-  };
-
-  const selecionarServico = (valor: string) => {
-    setServico(valor);
-    setMedicoSelecionado(null);
-    setHorarioSelecionado("");
-    setMensagem("");
+  const salvarPerfil = async () => {
     setErro("");
-  };
-
-  const selecionarPeriodo = (valor: Periodo) => {
-    setPeriodo(valor);
-    setMedicoSelecionado(null);
-    setHorarioSelecionado("");
     setMensagem("");
-    setErro("");
-
-    const primeiroServico = servicosPorPeriodo[valor][0];
-
-    setServico(primeiroServico);
-  };
-
-  const selecionarMedico = (medico: Medico) => {
-    setMedicoSelecionado(medico);
-    setHorarioSelecionado("");
-    setMensagem("");
-    setErro("");
-  };
-
-  // CONFIRMAR AGENDAMENTO
-  const agendar = async () => {
-    setMensagem("");
-    setErro("");
 
     if (!usuario) {
-      router.replace("/login");
+      router.replace("/entrar");
       return;
     }
 
-    if (!medicoSelecionado) {
-      setErro("Selecione um profissional.");
+    const obrigatorios: (keyof Perfil)[] = [
+      "nome",
+      "cpf",
+      "telefone",
+      "dataNascimento",
+      "cartaoSus",
+      "cep",
+      "rua",
+      "numero",
+      "bairro",
+      "cidade",
+    ];
+
+    const faltando = obrigatorios.some(
+      (campo) => !String(perfil[campo] ?? "").trim()
+    );
+
+    if (faltando) {
+      setErro("Preencha todos os campos obrigatórios do perfil.");
       return;
     }
 
-    if (!diaSelecionado) {
-      setErro("Selecione um dia.");
+    if (perfil.cep?.replace(/\D/g, "").length !== 8) {
+      setErro("Informe um CEP válido com oito números.");
       return;
     }
-
-    // Validação adicional para impedir agendamentos aos fins de semana.
-    const [ano, mes, dia] = diaSelecionado.split("-").map(Number);
-    const dataSelecionada = new Date(ano, mes - 1, dia);
-    const diaDaSemana = dataSelecionada.getDay();
-
-    if (diaDaSemana === 0 || diaDaSemana === 6) {
-      setErro(
-        "Não é possível agendar aos sábados ou domingos. Selecione um dia útil."
-      );
-      return;
-    }
-
-    if (!horarioSelecionado) {
-      setErro("Selecione um horário.");
-      return;
-    }
-
-    if (horarioOcupado(horarioSelecionado)) {
-      setErro("Esse horário já está ocupado.");
-      return;
-    }
-
-    setSalvando(true);
 
     try {
-      await addDoc(
-        collection(
-          db,
-          "usuarios",
-          usuario.uid,
-          "agendamentos"
-        ),
+      setSalvando(true);
+
+      await setDoc(
+        doc(db, "usuarios", usuario.uid),
         {
-          userId: usuario.uid,
-          servico,
-          periodo,
-          medico: medicoSelecionado.nome,
-          profissao: medicoSelecionado.profissao,
-          escalaInterna: medicoSelecionado.escala,
-          dia: diaSelecionado,
-          horario: horarioSelecionado,
-          status: "agendado",
-          criadoEm: serverTimestamp(),
-        }
+          ...perfil,
+          uid: usuario.uid,
+          email: usuario.email ?? "",
+          perfilAtualizadoEm: serverTimestamp(),
+        },
+        { merge: true }
       );
 
-      // A lista será atualizada automaticamente pelo onSnapshot.
-      setMensagem("Agendamento realizado com sucesso.");
-      setHorarioSelecionado("");
-    } catch (error) {
-      console.error("Erro ao salvar agendamento:", error);
-
+      setMensagem("Seus dados foram salvos.");
+      setEtapa("agendar");
+    } catch (erroFirebase) {
+      console.error("Erro ao salvar perfil:", erroFirebase);
       setErro(
-        "Não foi possível realizar o agendamento. Verifique as permissões do Firebase e tente novamente."
+        "Não foi possível salvar seus dados. Verifique as regras do Firestore."
       );
     } finally {
       setSalvando(false);
     }
   };
 
-  // CANCELAR AGENDAMENTO
-  const cancelarAgendamento = async (id: string) => {
+  const selecionarPeriodo = (novoPeriodo: Periodo) => {
+    setPeriodo(novoPeriodo);
+    setServico(servicosPorPeriodo[novoPeriodo][0]);
+    setHorarioSelecionado("");
+    setMensagem("");
+    setErro("");
+  };
+
+  const horarioOcupado = (horario: string) =>
+    agendamentos.some(
+      (item) =>
+        item.dia === diaSelecionado &&
+        item.periodo === periodo &&
+        item.horario === horario &&
+        item.medico === medico.trim() &&
+        item.status !== "cancelado"
+    );
+
+  const agendar = async () => {
+    setErro("");
+    setMensagem("");
+
     if (!usuario) {
+      router.replace("/entrar");
       return;
     }
 
-    setMensagem("");
+    if (!servico || !medico.trim() || !diaSelecionado || !horarioSelecionado) {
+      setErro("Selecione o atendimento, profissional, dia e horário.");
+      return;
+    }
+
+    if (horarioOcupado(horarioSelecionado)) {
+      setErro("Esse horário já está ocupado. Escolha outro.");
+      return;
+    }
+
+    const [ano, mes, dia] = diaSelecionado.split("-").map(Number);
+    const data = new Date(ano, mes - 1, dia);
+
+    if (data.getDay() === 0 || data.getDay() === 6) {
+      setErro("Os agendamentos devem ser feitos em dias úteis.");
+      return;
+    }
+
+    try {
+      setSalvando(true);
+
+      await addDoc(
+        collection(db, "usuarios", usuario.uid, "agendamentos"),
+        {
+          userId: usuario.uid,
+          servico,
+          periodo,
+          medico: medico.trim(),
+          profissao: profissao.trim(),
+          dia: diaSelecionado,
+          horario: horarioSelecionado,
+          unidadeReferencia: perfil.unidadeReferencia ?? "",
+          status: "agendado",
+          criadoEm: serverTimestamp(),
+        }
+      );
+
+      setMensagem("Solicitação de agendamento registrada.");
+      setHorarioSelecionado("");
+    } catch (erroFirebase) {
+      console.error("Erro ao salvar agendamento:", erroFirebase);
+      setErro(
+        "Não foi possível registrar o agendamento. Confira sua conexão e as regras do Firestore."
+      );
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const cancelarAgendamento = async (id: string) => {
+    if (!usuario) return;
+
     setErro("");
+    setMensagem("");
 
     try {
       await deleteDoc(
-        doc(
-          db,
-          "usuarios",
-          usuario.uid,
-          "agendamentos",
-          id
-        )
+        doc(db, "usuarios", usuario.uid, "agendamentos", id)
       );
 
-      // O onSnapshot atualizará a lista após a exclusão.
-      setMensagem("Agendamento cancelado.");
-    } catch (error) {
-      console.error("Erro ao cancelar agendamento:", error);
-
+      setMensagem("Agendamento removido.");
+    } catch (erroFirebase) {
+      console.error("Erro ao cancelar agendamento:", erroFirebase);
       setErro("Não foi possível cancelar o agendamento.");
     }
   };
+
+  const campoClasse =
+    "mt-1 w-full rounded-xl border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-[#111827] outline-none focus:border-[#007DB8] focus:ring-2 focus:ring-[#8ED3F5]/50";
+
+  const labelClasse = "block text-sm font-bold text-[#111827]";
+
+  const agendamentosAtivos = agendamentos.filter(
+    (item) => item.status !== "cancelado"
+  );
 
   return (
     <div className="min-h-screen bg-white">
       <Header />
       <Navigation />
 
-      <main>
-        <section className="mx-auto max-w-7xl px-6 py-10 lg:px-8 lg:py-14">
-          <div className="mb-8">
-            <p className="font-[family-name:var(--font-inter)] text-sm font-bold uppercase tracking-wide text-[#007DB8]">
-              Agendamentos
-            </p>
+      <main className="mx-auto max-w-7xl px-6 py-10 lg:px-8 lg:py-14">
+        <div className="mb-8">
+          <p className="text-sm font-bold uppercase tracking-wide text-[#007DB8]">
+            Saúde Vale+
+          </p>
 
-            <h1 className="mt-2 font-[family-name:var(--font-inter)] text-3xl font-extrabold tracking-tight text-[#005F8F] sm:text-4xl">
-              Agende seu atendimento
-            </h1>
+          <h1 className="mt-2 text-3xl font-extrabold text-[#005F8F] sm:text-4xl">
+            Agendamentos
+          </h1>
 
-            <p className="mt-2 max-w-3xl font-[family-name:var(--font-roboto)] text-base leading-7 text-[#111827]/65">
-              Escolha o período, atendimento, profissional, dia e horário disponível.
-            </p>
+          <p className="mt-3 max-w-3xl text-base leading-7 text-[#111827]/70">
+            Consulte e organize suas solicitações de atendimento.
+          </p>
+        </div>
+
+        {(mensagem || erro) && (
+          <div
+            role={erro ? "alert" : "status"}
+            className={`mb-6 rounded-xl border px-4 py-3 text-sm ${
+              erro
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-green-200 bg-green-50 text-green-700"
+            }`}
+          >
+            {erro || mensagem}
           </div>
+        )}
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="rounded-3xl border border-[#D1D5DB] bg-white p-6 shadow-sm sm:p-8">
-              <div>
-                <label className="mb-3 block font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]">
-                  Período
-                </label>
+        {carregando || etapa === "carregando" ? (
+          <section className="rounded-3xl border border-[#D1D5DB] bg-[#F5F7FA] p-8">
+            Verificando seu acesso e carregando seus dados...
+          </section>
+        ) : etapa === "perfil" ? (
+          <section className="rounded-3xl border border-[#D1D5DB] bg-white p-6 shadow-sm sm:p-8">
+            <h2 className="text-2xl font-extrabold text-[#005F8F]">
+              Confira seus dados
+            </h2>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {(["Manhã", "Tarde"] as Periodo[]).map((opcao) => (
-                    <button
-                      key={opcao}
-                      type="button"
-                      onClick={() => selecionarPeriodo(opcao)}
-                      className={`rounded-xl border px-4 py-3 font-[family-name:var(--font-inter)] text-sm font-bold transition ${periodo === opcao
-                          ? "border-[#007DB8] bg-[#007DB8] text-white"
-                          : "border-[#D1D5DB] bg-white text-[#005F8F] hover:border-[#007DB8]"
-                        }`}
-                    >
-                      {opcao}
-                    </button>
-                  ))}
+            <p className="mt-2 text-sm leading-6 text-[#111827]/65">
+              Confirme seus dados antes de continuar. Sua unidade de
+              referência pode ser confirmada posteriormente pela unidade de
+              saúde.
+            </p>
+
+            <div className="mt-7 grid gap-5 sm:grid-cols-2">
+              {(
+                [
+                  ["nome", "Nome completo"],
+                  ["cpf", "CPF"],
+                  ["telefone", "Telefone"],
+                  ["dataNascimento", "Data de nascimento"],
+                  ["cartaoSus", "Cartão SUS"],
+                  ["cep", "CEP"],
+                  ["rua", "Rua ou avenida"],
+                  ["numero", "Número"],
+                  ["bairro", "Bairro"],
+                  ["cidade", "Cidade"],
+                ] as [keyof Perfil, string][]
+              ).map(([campo, titulo]) => (
+                <div key={campo}>
+                  <label className={labelClasse}>{titulo} *</label>
+                  <input
+                    type={campo === "dataNascimento" ? "date" : "text"}
+                    className={campoClasse}
+                    value={String(perfil[campo] ?? "")}
+                    onChange={(e) =>
+                      atualizarPerfil(campo, e.target.value)
+                    }
+                    inputMode={
+                      ["cpf", "telefone", "cartaoSus", "cep"].includes(campo)
+                        ? "numeric"
+                        : undefined
+                    }
+                  />
                 </div>
+              ))}
+
+              <div>
+                <label className={labelClasse}>E-mail</label>
+                <input
+                  className={`${campoClasse} bg-[#F5F7FA]`}
+                  value={usuario?.email ?? ""}
+                  readOnly
+                />
               </div>
 
-              <div className="mt-7">
-                <label
-                  htmlFor="servico"
-                  className="mb-3 block font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]"
-                >
-                  Tipo de atendimento
-                </label>
+              <div>
+                <label className={labelClasse}>Unidade de referência</label>
+                <input
+                  className={`${campoClasse} bg-[#F5F7FA]`}
+                  value={perfil.unidadeReferencia ?? ""}
+                  readOnly
+                  placeholder="A confirmar"
+                />
+              </div>
+            </div>
 
+            <div className="mt-7 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={salvarPerfil}
+                disabled={salvando}
+                className="rounded-xl bg-[#007DB8] px-6 py-3 text-sm font-bold text-white hover:bg-[#005F8F] disabled:opacity-50"
+              >
+                {salvando ? "Salvando..." : "Salvar e continuar"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEtapa("agendar")}
+                className="rounded-xl border border-[#D1D5DB] px-6 py-3 text-sm font-bold text-[#005F8F] hover:border-[#007DB8]"
+              >
+                Continuar sem alterar
+              </button>
+
+              <Link
+                href="/perfil"
+                className="rounded-xl border border-[#D1D5DB] px-6 py-3 text-sm font-bold text-[#005F8F] hover:border-[#007DB8]"
+              >
+                Abrir meu perfil
+              </Link>
+            </div>
+          </section>
+        ) : etapa === "agendar" ? (
+          <section className="rounded-3xl border border-[#D1D5DB] bg-white p-6 shadow-sm sm:p-8">
+            <div className="mb-6 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setEtapa("perfil")}
+                className="text-sm font-bold text-[#007DB8] hover:underline"
+              >
+                ← Voltar aos dados
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEtapa("consultas")}
+                className="text-sm font-bold text-[#007DB8] hover:underline"
+              >
+                Minhas consultas →
+              </button>
+            </div>
+
+            <h2 className="text-2xl font-extrabold text-[#005F8F]">
+              Solicitar atendimento
+            </h2>
+
+            <div className="mt-7 grid gap-5 sm:grid-cols-2">
+              <div>
+                <label className={labelClasse}>Período</label>
                 <select
-                  id="servico"
-                  value={servico}
-                  onChange={(event) =>
-                    selecionarServico(event.target.value)
+                  className={campoClasse}
+                  value={periodo}
+                  onChange={(e) =>
+                    selecionarPeriodo(e.target.value as Periodo)
                   }
-                  className="w-full rounded-xl border border-[#D1D5DB] bg-white px-4 py-3 font-[family-name:var(--font-roboto)] text-sm text-[#111827] outline-none focus:border-[#007DB8] focus:ring-2 focus:ring-[#8ED3F5]/50"
+                >
+                  <option value="Manhã">Manhã</option>
+                  <option value="Tarde">Tarde</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClasse}>Tipo de atendimento</label>
+                <select
+                  className={campoClasse}
+                  value={servico}
+                  onChange={(e) => {
+                    setServico(e.target.value);
+                    setHorarioSelecionado("");
+                  }}
                 >
                   {servicosDisponiveis.map((item) => (
                     <option key={item} value={item}>
@@ -545,321 +578,157 @@ export default function AgendamentosPage() {
                     </option>
                   ))}
                 </select>
-
-                {periodo === "Tarde" && (
-                  <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-[family-name:var(--font-roboto)] text-xs leading-5 text-amber-800">
-                    No período da tarde também são realizados atendimentos para gestantes, conforme disponibilidade da unidade.
-                  </p>
-                )}
               </div>
 
-              <div className="mt-7">
-                <label className="mb-3 block font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]">
-                  Profissional
-                </label>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {medicosDisponiveis.map((medico) => (
-                    <button
-                      key={medico.id}
-                      type="button"
-                      onClick={() => selecionarMedico(medico)}
-                      className={`rounded-2xl border p-4 text-left transition ${medicoSelecionado?.id === medico.id
-                          ? "border-[#007DB8] bg-[#8ED3F5]/10 ring-2 ring-[#8ED3F5]/40"
-                          : "border-[#D1D5DB] bg-white hover:border-[#007DB8]"
-                        }`}
-                    >
-                      <p className="font-[family-name:var(--font-inter)] text-sm font-extrabold text-[#005F8F]">
-                        {medico.nome}
-                      </p>
-
-                      <p className="mt-1 font-[family-name:var(--font-roboto)] text-xs text-[#111827]/60">
-                        {medico.profissao}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-
-                {!medicosDisponiveis.length && (
-                  <div className="rounded-2xl border border-[#D1D5DB] bg-[#F5F7FA] p-5">
-                    <p className="font-[family-name:var(--font-roboto)] text-sm text-[#111827]/65">
-                      Nenhum profissional disponível para este atendimento.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-8 border-t border-[#D1D5DB] pt-8">
-                <label className="mb-3 block font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]">
-                  Escolha o dia
-                </label>
-
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-                  {dias.map((dia) => {
-                    const formatado = formatarDia(dia);
-                    const livre = diaTemHorarioLivre(dia);
-
-                    return (
-                      <button
-                        key={dia}
-                        type="button"
-                        onClick={() => {
-                          setDiaSelecionado(dia);
-                          setHorarioSelecionado("");
-                          setMensagem("");
-                          setErro("");
-                        }}
-                        className={`rounded-2xl border p-3 text-center transition ${diaSelecionado === dia
-                            ? "border-[#007DB8] bg-[#007DB8] text-white"
-                            : livre
-                              ? "border-green-200 bg-green-50 text-green-800 hover:border-green-400"
-                              : "border-red-200 bg-red-50 text-red-800"
-                          }`}
-                      >
-                        <span className="block font-[family-name:var(--font-roboto)] text-xs uppercase">
-                          {formatado.semana}
-                        </span>
-
-                        <span className="mt-1 block font-[family-name:var(--font-inter)] text-xl font-extrabold">
-                          {formatado.dia}
-                        </span>
-
-                        <span className="mt-1 block font-[family-name:var(--font-roboto)] text-[11px]">
-                          {livre ? "Livre" : "Sem vagas"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-8 border-t border-[#D1D5DB] pt-8">
-                <div>
-                  <label className="block font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]">
-                    Horários disponíveis
-                  </label>
-
-                  <p className="mt-1 font-[family-name:var(--font-roboto)] text-xs text-[#111827]/55">
-                    {medicoSelecionado
-                      ? formatarDataCompleta(diaSelecionado)
-                      : "Selecione um profissional para ver os horários."}
-                  </p>
-                </div>
-
-                {medicoSelecionado && (
-                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {horariosDoMedico.map((horario) => {
-                      const ocupado = horarioOcupado(horario);
-
-                      return (
-                        <button
-                          key={horario}
-                          type="button"
-                          disabled={ocupado}
-                          onClick={() =>
-                            setHorarioSelecionado(horario)
-                          }
-                          className={`rounded-xl border px-4 py-3 font-[family-name:var(--font-inter)] text-sm font-bold transition ${ocupado
-                              ? "cursor-not-allowed border-red-200 bg-red-50 text-red-500"
-                              : horarioSelecionado === horario
-                                ? "border-[#007DB8] bg-[#007DB8] text-white"
-                                : "border-green-200 bg-green-50 text-green-800 hover:border-green-400"
-                            }`}
-                        >
-                          {horario}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="mt-6 flex flex-wrap gap-4 font-[family-name:var(--font-roboto)] text-xs text-[#111827]/60">
-                  <span className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full bg-green-500" />
-                    Disponível
-                  </span>
-
-                  <span className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full bg-red-500" />
-                    Ocupado
-                  </span>
-                </div>
-              </div>
-
-              {mensagem && (
-                <div
-                  role="status"
-                  className="mt-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 font-[family-name:var(--font-roboto)] text-sm text-green-700"
-                >
-                  {mensagem}
-                </div>
-              )}
-
-              {erro && (
-                <div
-                  role="alert"
-                  className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-[family-name:var(--font-roboto)] text-sm text-red-700"
-                >
-                  {erro}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={agendar}
-                disabled={
-                  carregando ||
-                  salvando ||
-                  !medicoSelecionado ||
-                  !horarioSelecionado
-                }
-                className="mt-7 w-full rounded-xl bg-[#007DB8] px-5 py-3.5 font-[family-name:var(--font-inter)] text-sm font-bold text-white transition hover:bg-[#005F8F] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {salvando
-                  ? "Agendando..."
-                  : carregando
-                    ? "Carregando seus dados..."
-                    : "Confirmar agendamento"}
-              </button>
-            </section>
-
-            <aside className="h-fit space-y-6">
-              <section className="rounded-3xl border border-[#D1D5DB] bg-white p-6 shadow-sm">
-                <p className="font-[family-name:var(--font-inter)] text-sm font-bold uppercase tracking-wide text-[#007DB8]">
-                  Meu atendimento
+              <div>
+                <label className={labelClasse}>Profissional</label>
+                <input
+                  className={campoClasse}
+                  value={medico}
+                  onChange={(e) => setMedico(e.target.value)}
+                  placeholder="Nome do profissional"
+                />
+                <p className="mt-2 text-xs text-[#111827]/60">
+                  Os profissionais e horários desta versão são informados
+                  manualmente, não vêm de uma agenda oficial.
                 </p>
+              </div>
 
-                {medicoSelecionado ? (
-                  <div className="mt-5">
-                    <h2 className="font-[family-name:var(--font-inter)] text-xl font-extrabold text-[#005F8F]">
-                      {medicoSelecionado.nome}
-                    </h2>
+              <div>
+                <label className={labelClasse}>Profissão</label>
+                <input
+                  className={campoClasse}
+                  value={profissao}
+                  onChange={(e) => setProfissao(e.target.value)}
+                  placeholder="Ex.: médico ou dentista"
+                />
+              </div>
 
-                    <p className="mt-1 font-[family-name:var(--font-roboto)] text-sm text-[#111827]/60">
-                      {medicoSelecionado.profissao}
-                    </p>
+              <div>
+                <label className={labelClasse}>Dia</label>
+                <select
+                  className={campoClasse}
+                  value={diaSelecionado}
+                  onChange={(e) => {
+                    setDiaSelecionado(e.target.value);
+                    setHorarioSelecionado("");
+                  }}
+                >
+                  <option value="">Selecione um dia</option>
+                  {dias.map((dia) => (
+                    <option key={dia} value={dia}>
+                      {formatarData(dia)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-                    <div className="mt-5 space-y-3">
-                      <div className="rounded-xl bg-[#F5F7FA] p-4">
-                        <p className="font-[family-name:var(--font-roboto)] text-xs text-[#111827]/50">
-                          Atendimento
-                        </p>
+            <div className="mt-7">
+              <h3 className="text-sm font-bold text-[#111827]">
+                Horários disponíveis
+              </h3>
 
-                        <p className="mt-1 font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]">
-                          {servico}
-                        </p>
-                      </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {horariosDisponiveis.map((horario) => {
+                  const ocupado =
+                    Boolean(medico.trim() && diaSelecionado) &&
+                    horarioOcupado(horario);
 
-                      <div className="rounded-xl bg-[#F5F7FA] p-4">
-                        <p className="font-[family-name:var(--font-roboto)] text-xs text-[#111827]/50">
-                          Data
-                        </p>
+                  return (
+                    <button
+                      key={horario}
+                      type="button"
+                      disabled={ocupado}
+                      onClick={() => setHorarioSelecionado(horario)}
+                      className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                        ocupado
+                          ? "cursor-not-allowed border-red-200 bg-red-50 text-red-500"
+                          : horarioSelecionado === horario
+                            ? "border-[#007DB8] bg-[#007DB8] text-white"
+                            : "border-green-200 bg-green-50 text-green-800 hover:border-green-400"
+                      }`}
+                    >
+                      {horario}
+                      {ocupado ? " · Ocupado" : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                        <p className="mt-1 font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]">
-                          {diaSelecionado
-                            ? formatarDataCompleta(diaSelecionado)
-                            : "Selecione um dia"}
-                        </p>
-                      </div>
+            {periodo === "Tarde" && (
+              <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+                Gestantes que estiverem passando mal devem procurar a
+                unidade pela manhã para orientação. Em uma emergência,
+                procure atendimento de urgência.
+              </p>
+            )}
 
-                      <div className="rounded-xl bg-[#F5F7FA] p-4">
-                        <p className="font-[family-name:var(--font-roboto)] text-xs text-[#111827]/50">
-                          Horário
-                        </p>
+            <button
+              type="button"
+              onClick={agendar}
+              disabled={salvando}
+              className="mt-7 w-full rounded-xl bg-[#007DB8] px-5 py-3.5 text-sm font-bold text-white hover:bg-[#005F8F] disabled:opacity-50"
+            >
+              {salvando ? "Registrando..." : "Confirmar solicitação"}
+            </button>
+          </section>
+        ) : (
+          <section className="rounded-3xl border border-[#D1D5DB] bg-white p-6 shadow-sm sm:p-8">
+            <button
+              type="button"
+              onClick={() => setEtapa("agendar")}
+              className="mb-5 text-sm font-bold text-[#007DB8] hover:underline"
+            >
+              ← Voltar ao agendamento
+            </button>
 
-                        <p className="mt-1 font-[family-name:var(--font-inter)] text-sm font-bold text-[#111827]">
-                          {horarioSelecionado ||
-                            "Ainda não selecionado"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="mt-4 font-[family-name:var(--font-roboto)] text-sm leading-6 text-[#111827]/60">
-                    Selecione um profissional para visualizar o resumo do atendimento.
-                  </p>
-                )}
-              </section>
+            <h2 className="text-2xl font-extrabold text-[#005F8F]">
+              Minhas consultas
+            </h2>
 
-              <section className="rounded-3xl border border-[#D1D5DB] bg-white p-6 shadow-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="font-[family-name:var(--font-inter)] text-sm font-bold uppercase tracking-wide text-[#007DB8]">
-                      Meus agendamentos
-                    </p>
-
-                    <h2 className="mt-2 font-[family-name:var(--font-inter)] text-lg font-extrabold text-[#111827]">
-                      Consultas marcadas
-                    </h2>
-                  </div>
-
-                  <span className="rounded-full bg-[#8ED3F5]/30 px-3 py-1 font-[family-name:var(--font-inter)] text-xs font-bold text-[#005F8F]">
-                    {
-                      agendamentos.filter(
-                        (item) => item.status !== "cancelado"
-                      ).length
-                    }
-                  </span>
+            <div className="mt-6 space-y-4">
+              {agendamentosAtivos.length === 0 ? (
+                <div className="rounded-xl bg-[#F5F7FA] p-5 text-sm text-[#111827]/65">
+                  Você ainda não possui agendamentos registrados.
                 </div>
+              ) : (
+                agendamentosAtivos.map((item) => (
+                  <article
+                    key={item.id}
+                    className="rounded-2xl border border-[#D1D5DB] p-5"
+                  >
+                    <h3 className="font-extrabold text-[#005F8F]">
+                      {item.servico}
+                    </h3>
 
-                <div className="mt-5 space-y-3">
-                  {carregando ? (
-                    <p className="rounded-xl bg-[#F5F7FA] p-4 font-[family-name:var(--font-roboto)] text-sm leading-6 text-[#111827]/60">
-                      Carregando seus agendamentos...
+                    <p className="mt-1 text-sm text-[#111827]/65">
+                      {item.medico}
+                      {item.profissao ? ` · ${item.profissao}` : ""}
                     </p>
-                  ) : agendamentos.filter(
-                    (item) => item.status !== "cancelado"
-                  ).length === 0 ? (
-                    <p className="rounded-xl bg-[#F5F7FA] p-4 font-[family-name:var(--font-roboto)] text-sm leading-6 text-[#111827]/60">
-                      Você ainda não possui agendamentos.
+
+                    <p className="mt-2 text-sm text-[#111827]/65">
+                      {formatarData(item.dia)} às {item.horario}
                     </p>
-                  ) : (
-                    agendamentos
-                      .filter(
-                        (item) => item.status !== "cancelado"
-                      )
-                      .map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl border border-[#D1D5DB] bg-white p-4"
-                        >
-                          <p className="font-[family-name:var(--font-inter)] text-sm font-extrabold text-[#005F8F]">
-                            {item.servico}
-                          </p>
 
-                          <p className="mt-1 font-[family-name:var(--font-roboto)] text-xs text-[#111827]/60">
-                            {item.medico}
-                          </p>
+                    <p className="mt-2 text-xs text-[#111827]/60">
+                      Período: {item.periodo} · Situação: {item.status}
+                    </p>
 
-                          <p className="mt-2 font-[family-name:var(--font-roboto)] text-xs text-[#111827]/60">
-                            {formatarDataCompleta(item.dia)} às{" "}
-                            {item.horario}
-                          </p>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              cancelarAgendamento(item.id)
-                            }
-                            className="mt-4 font-[family-name:var(--font-inter)] text-xs font-bold text-red-600 transition hover:text-red-800"
-                          >
-                            Cancelar agendamento
-                          </button>
-                        </div>
-                      ))
-                  )}
-                </div>
-              </section>
-
-              <Link
-                href="/dashboard"
-                className="block rounded-2xl border border-[#D1D5DB] bg-[#F5F7FA] p-5 text-center font-[family-name:var(--font-inter)] text-sm font-bold text-[#005F8F] transition hover:border-[#007DB8] hover:bg-white"
-              >
-                ← Voltar para minha área
-              </Link>
-            </aside>
-          </div>
-        </section>
+                    <button
+                      type="button"
+                      onClick={() => cancelarAgendamento(item.id)}
+                      className="mt-4 text-sm font-bold text-red-600 hover:text-red-800"
+                    >
+                      Cancelar agendamento
+                    </button>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        )}
       </main>
 
       <Footer />
