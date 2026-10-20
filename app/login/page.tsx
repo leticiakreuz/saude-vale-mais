@@ -54,7 +54,8 @@ try {
     return;
   }
 
-window.location.href = "/dashboard";
+router.push("/dashboard");
+router.refresh();
 } catch (error: unknown) {
   console.error("Erro ao entrar:", error);
   
