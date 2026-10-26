@@ -210,7 +210,7 @@ export default function DashboardPage() {
       cancelarAgendamentos = undefined;
 
       if (!user) {
-        router.replace("/entrar");
+        router.replace("/login");
         return;
       }
 
